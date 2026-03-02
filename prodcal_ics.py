@@ -2,45 +2,42 @@
 # -*- coding: utf-8 -*-
 
 from icalendar import Calendar, Event
-from lxml import html
 import requests
 
 from datetime import datetime, timedelta
 import argparse
 import logging
 import hashlib
+import more_itertools as mit
 
 
 def get_holidays_grouped_by_months(year):
-    url = f"https://hh.ru/article/calendar{year}"
+    url = f"https://xmlcalendar.ru/data/ru/{year}/calendar.json"
 
     logging.info(url)
 
-    headers = {"User-Agent": "curl/7.68.0"}
+    response = requests.get(url)
 
-    page = requests.get(url, headers=headers, allow_redirects=True)
-
-    if page.status_code == 404:
+    if response.status_code == 404:
         return None
 
-    tree = html.fromstring(page.content)
-    months = tree.xpath(
-        "//div[@class='calendar-list__item__title' or @class='calendar-list__item-title']/.."
-    )
+    response.raise_for_status()
 
-    if len(months) != 12:
-        raise Exception(
-            f"len(months) ({year} year) must be equal to 12, actual: {len(months)}"
-        )
-
+    data = response.json()
     holidays = []
 
-    for m in months:
-        holidays_in_month = m.xpath(
-            ".//li[contains(@class, 'calendar-list__numbers__item_day-off')]/text()"
-        )
-        holidays_in_month = [day.strip() for day in holidays_in_month if day.strip()]
-        holidays.append([int(day) for day in holidays_in_month])
+    for month_data in data["months"]:
+        days_raw = month_data["days"].split(",")
+        holiday_days = []
+        for d in days_raw:
+            d = d.strip()
+            # * means a working day transferred from a weekend — skip it
+            if d.endswith("*"):
+                continue
+            # + means a transferred holiday — still a day off
+            d = d.rstrip("+")
+            holiday_days.append(int(d))
+        holidays.append(sorted(holiday_days))
 
     return holidays
 
@@ -63,8 +60,6 @@ def create_dayoff_event(year, month, day_start, day_end):
 
 
 def generate_events(year, holidays_by_months):
-    import more_itertools as mit
-
     events = []
 
     for month, holidays in enumerate(holidays_by_months, start=1):
@@ -82,7 +77,7 @@ def parse_args():
         description="This script fetches data about production calendar and generates .ics file with it."
     )
 
-    default_output_file = "test.ics"
+    default_output_file = "prodcal.ics"
     parser.add_argument(
         "-o",
         dest="output_file",
@@ -103,8 +98,8 @@ def parse_args():
         "--end-year",
         metavar="yyyy",
         type=int,
-        default=(datetime.today().year + 1),
-        help="year calendar ends (default: next year)",
+        default=datetime.today().year,
+        help="year calendar ends (default: current year)",
     )
 
     parser.add_argument("--log-level", metavar="level", default="INFO")
@@ -157,3 +152,5 @@ if __name__ == "__main__":
 
     with open(args.output_file, "w") as f:
         f.write(cal.to_ical().decode("utf-8"))
+
+    logging.info(f"Saved to {args.output_file}")
