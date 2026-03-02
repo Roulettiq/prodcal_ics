@@ -109,7 +109,7 @@ def parse_args():
 
 def generate_calendar(events):
     cal = Calendar()
-    cal.add("prodid", "-//My calendar product//mxm.dk//")
+    cal.add("prodid", "-//Roulettiq//prodcal_ics//")
     cal.add("version", "2.0")
     cal.add("NAME", "Производственный календарь")
     cal.add("X-WR-CALNAME", "Производственный календарь")
